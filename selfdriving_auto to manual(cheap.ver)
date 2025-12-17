@@ -1,0 +1,99 @@
+#include <Wire.h>
+#include <Adafruit_MCP4725.h>
+#include <SoftWire.h>
+#include <LiquidCrystal_PCF8574.h>
+
+/* ================= 핀 정의 ================= */
+#define HALL_PIN     A0
+#define FORWARD_PIN  9
+#define BACKWARD_PIN 10
+#define RELAY_PIN    8
+
+#define LCD_SDA 11
+#define LCD_SCL 12
+
+/* ================= 소프트 I2C (LCD) ================= */
+SoftWire lcdWire(LCD_SDA, LCD_SCL);
+LiquidCrystal_PCF8574 lcd(0x27, &lcdWire);
+
+/* ================= 하드웨어 I2C (MCP4725) ================= */
+Adafruit_MCP4725 dac;
+
+/* ================= 속도 계산 ================= */
+volatile int hallCount = 0;
+unsigned long lastTime = 0;
+
+const float wheelRadius = 0.25; // m
+const float wheelCircumference = 2 * 3.1416 * wheelRadius;
+float speed = 0.0; // m/s
+
+void hallISR() {
+  hallCount++;
+}
+
+void setup() {
+  /* 핀 설정 */
+  pinMode(HALL_PIN, INPUT_PULLUP);
+  pinMode(FORWARD_PIN, INPUT_PULLUP);
+  pinMode(BACKWARD_PIN, INPUT_PULLUP);
+  pinMode(RELAY_PIN, OUTPUT);
+  digitalWrite(RELAY_PIN, LOW);
+
+  attachInterrupt(digitalPinToInterrupt(HALL_PIN), hallISR, RISING);
+
+  /* 하드웨어 I2C (MCP4725) */
+  Wire.begin();
+  dac.begin(0x60);
+
+  /* 소프트 I2C (LCD) */
+  lcd.begin(16, 2);
+  lcd.setBacklight(255);
+  lcd.clear();
+
+  lastTime = millis();
+
+  Serial.begin(9600);
+}
+
+void loop() {
+  /* ===== 속도 계산 (m/s) ===== */
+  unsigned long now = millis();
+  float dt = (now - lastTime) / 1000.0;
+
+  noInterrupts();
+  int count = hallCount;
+  hallCount = 0;
+  interrupts();
+
+  float distance = count * wheelCircumference;
+  if (dt > 0) speed = distance / dt;
+  lastTime = now;
+
+  /* ===== LCD 표시 ===== */
+  lcd.setCursor(0, 0);
+  if (digitalRead(FORWARD_PIN) == LOW)
+    lcd.print("Forward   ");
+  else if (digitalRead(BACKWARD_PIN) == LOW)
+    lcd.print("Backward  ");
+  else
+    lcd.print("Neutral   ");
+
+  lcd.setCursor(0, 1);
+  lcd.print("Speed:");
+  lcd.print(speed, 2);
+  lcd.print(" m/s  ");
+
+  /* ===== 릴레이 제어 ===== */
+  if (Serial.available()) {
+    char c = Serial.read();
+    if (c == 's') {
+      digitalWrite(RELAY_PIN, !digitalRead(RELAY_PIN));
+    }
+  }
+
+  /* ===== MCP4725 출력 ===== */
+  int dacValue = constrain(map(speed * 100, 0, 100, 0, 4095), 0, 4095);
+  dac.setVoltage(dacValue, false);
+
+  delay(200);
+}
