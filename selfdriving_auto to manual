@@ -1,0 +1,94 @@
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+
+// ===== LCD =====
+LiquidCrystal_I2C lcd(0x27, 16, 2);   // LCD 주소 필요시 수정
+
+// ===== 핀 설정 =====
+const int hallPin   = A0;   // 홀 센서
+const int signalFwd = 9;    // 전진 신호
+const int signalRev = 10;   // 후진 신호
+const int relayPin  = 8;    // 릴레이
+
+// ===== 바퀴 정보 =====
+const float wheelRadius = 0.25;                  // m
+const float wheelCircumference = 2 * PI * wheelRadius;
+
+// ===== 속도 계산 =====
+unsigned long lastPulseTime = 0;
+unsigned long pulseInterval = 0;
+float speed_mps = 0.0;
+
+// ===== 릴레이 =====
+bool relayState = false;
+
+// ===== 홀 센서 상태 추적 =====
+int lastHallState = LOW;
+
+void setup() {
+  pinMode(hallPin, INPUT);
+  pinMode(signalFwd, INPUT);
+  pinMode(signalRev, INPUT);
+  pinMode(relayPin, OUTPUT);
+
+  digitalWrite(relayPin, LOW);
+
+  lcd.begin();
+  lcd.backlight();
+
+  lcd.setCursor(0, 0);
+  lcd.print("NEUTRAL         ");
+  lcd.setCursor(0, 1);
+  lcd.print("Speed: 0.00 m/s ");
+
+  Serial.begin(9600);
+}
+
+void loop() {
+  // ===== 홀 센서 폴링 (A0는 인터럽트 불가) =====
+  int hallState = digitalRead(hallPin);
+
+  if (hallState == HIGH && lastHallState == LOW) {
+    unsigned long now = millis();
+    if (lastPulseTime > 0) {
+      pulseInterval = now - lastPulseTime;
+      speed_mps = wheelCircumference / (pulseInterval / 1000.0);
+    }
+    lastPulseTime = now;
+  }
+  lastHallState = hallState;
+
+  // ===== 일정 시간 신호 없으면 정지 처리 =====
+  if (millis() - lastPulseTime > 1500) {
+    speed_mps = 0.0;
+  }
+
+  // ===== 상태 판단 =====
+  lcd.setCursor(0, 0);
+  if (digitalRead(signalFwd) == HIGH) {
+    lcd.print("FORWARD         ");
+  } 
+  else if (digitalRead(signalRev) == HIGH) {
+    lcd.print("REVERSE         ");
+  } 
+  else {
+    lcd.print("NEUTRAL         ");
+  }
+
+  // ===== 속도 표시 (아랫줄) =====
+  lcd.setCursor(0, 1);
+  lcd.print("Speed: ");
+  lcd.print(speed_mps, 2);
+  lcd.print(" m/s   ");
+
+  // ===== 시리얼로 릴레이 토글 =====
+  if (Serial.available()) {
+    char cmd = Serial.read();
+    if (cmd == 's') {
+      relayState = !relayState;
+      digitalWrite(relayPin, relayState ? HIGH : LOW);
+    }
+  }
+
+  delay(50);  // LCD 깜빡임 방지
+}
