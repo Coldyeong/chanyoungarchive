@@ -1,0 +1,62 @@
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+
+/* ================= LCD ================= */
+LiquidCrystal_I2C lcd(0x27, 16, 2); // 주소 0x27 (안 되면 0x3F)
+
+/* ================= 홀 센서 ================= */
+const int hallPin = A0;
+const int threshold = 512;   // 센서 중간값 기준
+int lastState = LOW;
+
+/* ================= 바퀴 정보 ================= */
+const float wheelRadius = 0.25; // m (25cm)
+const float wheelCircumference = 2.0 * 3.141592 * wheelRadius;
+
+/* ================= 속도 계산 ================= */
+unsigned long lastTime = 0;
+unsigned long pulseCount = 0;
+
+void setup() {
+  lcd.init();
+  lcd.backlight();
+  lcd.clear();
+
+  lcd.setCursor(0, 0);
+  lcd.print("Speed Meter");
+
+  pinMode(hallPin, INPUT);
+
+  lastTime = millis();
+}
+
+void loop() {
+  /* ---------- 홀 센서 읽기 ---------- */
+  int hallValue = analogRead(hallPin);
+  int hallState = (hallValue > threshold) ? HIGH : LOW;
+
+  if (hallState == HIGH && lastState == LOW) {
+    pulseCount++;
+  }
+  lastState = hallState;
+
+  /* ---------- 속도 계산 ---------- */
+  unsigned long now = millis();
+  float dt = (now - lastTime) / 1000.0;
+
+  if (dt >= 0.5) { // 0.5초마다 계산
+    float distance = pulseCount * wheelCircumference; // m
+    float speed_ms = distance / dt;
+    float speed_kmh = speed_ms * 3.6;
+
+    pulseCount = 0;
+    lastTime = now;
+
+    /* ---------- LCD 출력 ---------- */
+    lcd.setCursor(0, 1);
+    lcd.print("      ");   // 이전 값 지우기
+    lcd.setCursor(0, 1);
+    lcd.print(speed_kmh, 2);
+    lcd.print(" km/h");
+  }
+}
