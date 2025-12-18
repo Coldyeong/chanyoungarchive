@@ -1,0 +1,66 @@
+#include <Wire.h>
+#include <Adafruit_MCP4725.h>
+
+/* ================= MCP4725 ================= */
+Adafruit_MCP4725 dac;
+
+/* ================= 핀 설정 ================= */
+const int hallPin  = A0;
+const int relayPin = 8;
+
+/* ================= 릴레이 상태 ================= */
+bool relayState = false;
+
+/* ================= DAC 값 ================= */
+int dacValue = 0;
+
+void setup() {
+  Serial.begin(9600);
+  Wire.begin();
+
+  dac.begin(0x60);
+
+  pinMode(relayPin, OUTPUT);
+  digitalWrite(relayPin, LOW);
+
+  Serial.println("READY");
+  Serial.println("숫자 입력: MCP4725 출력 (0~4095)");
+  Serial.println("s 입력: 릴레이 토글");
+}
+
+void loop() {
+  /* ---------- 시리얼 입력 처리 ---------- */
+  if (Serial.available()) {
+    String input = Serial.readStringUntil('\n');
+    input.trim();
+
+    // 릴레이 토글
+    if (input == "s") {
+      relayState = !relayState;
+      digitalWrite(relayPin, relayState);
+    }
+    // 숫자 → DAC
+    else {
+      int value = input.toInt();
+      if (value >= 0 && value <= 4095) {
+        dacValue = value;
+        dac.setVoltage(dacValue, false);
+      }
+    }
+  }
+
+  /* ---------- 리니어 홀 센서 ---------- */
+  int hallValue = analogRead(hallPin);
+
+  /* ---------- 상태 출력 ---------- */
+  Serial.print("HALL: ");
+  Serial.print(hallValue);
+
+  Serial.print(" | DAC: ");
+  Serial.print(dacValue);
+
+  Serial.print(" | RELAY: ");
+  Serial.println(relayState ? "ON" : "OFF");
+
+  delay(100);
+}
